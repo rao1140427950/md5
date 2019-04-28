@@ -1,312 +1,240 @@
-﻿#include <iostream>
-#include <iomanip>
-
-using namespace std;
-
-#define A 0x67452301
-#define B 0xEFCDAB89
-#define C 0x98BADCFE
-#define D 0x10325476
-
-#define MAX_MOVEBITS 25
-
-typedef unsigned char byte;
-
-string info = "16711083";
-
-void length2bin(byte *infoLength_64bits, unsigned long infoLength);
-void info2bin(string info, byte* info_448bits, unsigned long infoLength);
-void concatInfoLength(byte* info_512bits, byte* info_448bits, byte* infoLength_64bits);
-void f_func(byte* rst, byte* x, byte* y, byte* z, int length);
-void g_func(byte* rst, byte* x, byte* y, byte* z, int length);
-void h_func(byte* rst, byte* x, byte* y, byte* z, int length);
-void i_func(byte* rst, byte* x, byte* y, byte* z, int length);
-void divide_16x32bits(byte rst[16][32], byte* info_512bits);
-void cyclic_shift_left(byte* data, int move_bits, int length);
-void ff_func(byte* a_32bits, byte* b_32bits, byte* c_32bits, byte* d_32bits, byte* m_32bits, int s, unsigned long t);
-void gg_func(byte* a_32bits, byte* b_32bits, byte* c_32bits, byte* d_32bits, byte* m_32bits, int s, unsigned long t);
-void hh_func(byte* a_32bits, byte* b_32bits, byte* c_32bits, byte* d_32bits, byte* m_32bits, int s, unsigned long t);
-void ii_func(byte* a_32bits, byte* b_32bits, byte* c_32bits, byte* d_32bits, byte* m_32bits, int s, unsigned long t);
-void getMD5(unsigned long md5[4], byte data[16][32]);
-
-
-int main()
-{
-	byte infoLength_64bits[64];
-	byte info_448bits[448];
-	byte info_512bits[512];
-	byte info_16x32bits[16][32];
-	unsigned long infoLength = unsigned long(8 * info.length());
-	unsigned long md5[4];
-
-	length2bin(infoLength_64bits, infoLength);
-	info2bin(info, info_448bits, infoLength);
-	concatInfoLength(info_512bits, info_448bits, infoLength_64bits);
-	divide_16x32bits(info_16x32bits, info_512bits);
-	getMD5(md5, info_16x32bits);
-
-
-	cout << "Original info: " << info << endl;
-	cout << "MD5 value: " << setw(8) << setfill('0') << hex << md5[0] << "-" << setw(8) << setfill('0') << hex;
-	cout << setw(8) << setfill('0') << md5[1] << "-" << setw(8) << setfill('0') << hex << md5[2] << "-" << hex << md5[3] << endl;
-}
-
-void length2bin(byte* infoLength_64bits, unsigned long infoLength)
-{
-	for (int i = 0; i < 32; i++) infoLength_64bits[i] = (infoLength >> i) & 0x00000001;
-	for (int i = 32; i < 64; i++) infoLength_64bits[i] = 0;
-}
-
-void info2bin(string info, byte* info_448bits, unsigned long infoLength)
-{
-	for (int i = 0; i < info.length(); i++)
-	{
-		for (int j = 0; j < 8; j++)
-		{
-			info_448bits[i * 8 + j] = (byte(info[i]) >> j) & 0x01;
-		}
-	}
-	info_448bits[infoLength] = 1;
-	for (int i = infoLength + 1; i < 448; i++) info_448bits[i] = 0;
-}
-
-void concatInfoLength(byte* info_512bits, byte* info_448bits, byte* infoLength_64bits)
-{
-	for (int i = 0; i < 448; i++) info_512bits[i] = info_448bits[i];
-	for (int i = 0; i < 64; i++) info_512bits[448 + i] = infoLength_64bits[i];
-}
-
-byte do_not(byte x)
-{
-	if (x > 0) return 0;
-	else return 1;
-}
+#include "md5.h"
 
 // F(X,Y,Z) =(X&Y)|((~X)&Z)
-void f_func(byte* rst, byte* x, byte* y, byte* z, int length)
+uint32 F(uint32 x, uint32 y, uint32 z)
 {
-	for (int i = 0; i < length; i++)
-	{
-		rst[i] = (x[i] & y[i]) | (do_not(x[i]) & z[i]);
-	}
+	return ((x & y) | ((~x) & z));
 }
 
 // G(X,Y,Z) =(X&Z)|(Y&(~Z))
-void g_func(byte* rst, byte* x, byte* y, byte* z, int length)
+uint32 G(uint32 x, uint32 y, uint32 z)
 {
-	for (int i = 0; i < length; i++)
-	{
-		rst[i] = (x[i] & z[i]) | (do_not(z[i]) & y[i]);
-	}
+	return ((x & z) | (y & (~z)));
 }
 
 // H(X,Y,Z) =X^Y^Z
-void h_func(byte* rst, byte* x, byte* y, byte* z, int length)
+uint32 H(uint32 x, uint32 y, uint32 z)
 {
-	for (int i = 0; i < length; i++)
-	{
-		rst[i] = x[i] & y[i] & z[i];
-	}
+	return (x ^ y ^ z);
 }
 
 // I(X,Y,Z)=Y^(X|(~Z))
-void i_func(byte* rst, byte* x, byte* y, byte* z, int length)
+uint32 I(uint32 x, uint32 y, uint32 z)
 {
-	for (int i = 0; i < length; i++)
+	return (y ^ (x | (~z)));
+}
+
+uint32 cyclic_shift_left(uint32 x, uint32 n)
+{
+	return ((x << n) | (x >> (32 - n)));
+}
+
+uint32 FF(uint32 a, uint32 b, uint32 c, uint32 d, uint32 x, uint32 s, uint32 ac)
+{
+	a += F(b, c, d) + x + ac;
+	a = cyclic_shift_left(a, s);
+	a += b;
+	return a;
+}
+
+uint32 GG(uint32 a, uint32 b, uint32 c, uint32 d, uint32 x, uint32 s, uint32 ac)
+{
+	a += G(b, c, d) + x + ac;
+	a = cyclic_shift_left(a, s);
+	a += b;
+	return a;
+}
+
+uint32 HH(uint32 a, uint32 b, uint32 c, uint32 d, uint32 x, uint32 s, uint32 ac)
+{
+	a += H(b, c, d) + x + ac;
+	a = cyclic_shift_left(a, s);
+	a += b;
+	return a;
+}
+
+uint32 II(uint32 a, uint32 b, uint32 c, uint32 d, uint32 x, uint32 s, uint32 ac)
+{
+	a += I(b, c, d) + x + ac;
+	a = cyclic_shift_left(a, s);
+	a += b;
+	return a;
+}
+
+void decode(const uint8* input, uint32* output, uint32 length)
+{
+	for (uint32 i = 0, j = 0; j < length; ++i, j += 4) 
 	{
-		rst[i] = y[i] & (x[i] | do_not(z[i]));
+		output[i] = (input[j]) | ((input[j + 1]) << 8) | ((input[j + 2]) << 16) | ((input[j + 3]) << 24);
 	}
 }
 
-void divide_16x32bits(byte rst[16][32], byte* info_512bits)
+void encode(const uint32* input, uint8* output, uint32 length)
 {
-	for (int i = 0; i < 16; i++)
-	{
-		for (int j = 0; j < 32; j++)
-		{
-			rst[i][j] = info_512bits[i * 16 + j];
-		}
+	for (uint32 i = 0, j = 0; j < length; ++i, j += 4) {
+		output[j] = (uint8)(input[i] & 0xff);
+		output[j + 1] = (uint8)((input[i] >> 8) & 0xff);
+		output[j + 2] = (uint8)((input[i] >> 16) & 0xff);
+		output[j + 3] = (uint8)((input[i] >> 24) & 0xff);
 	}
 }
 
-void cyclic_shift_left(byte* data, int move_bits, int length)
+void transform(const uint8* block, uint32* state)
 {
-	byte temp[MAX_MOVEBITS];
-
-	for (int i = 0; i < MAX_MOVEBITS; i++) temp[i] = data[i];
-	for (int i = 0; i < length - move_bits; i++) data[i] = data[i + move_bits];
-	for (int i = length - move_bits; i < length; i++) data[i] = temp[i - length + move_bits];
-}
-
-void long2bin(byte* rst, unsigned long x)
-{
-	for (int i = 0; i < 32; i++) rst[i] = (x >> i) & 0x00000001;
-}
-
-void add_2x32bits(byte* rst, byte* a, byte* b)
-{
-	byte temp = 0;
-
-	for (int i = 0; i < 32; i++)
-	{
-		temp = temp + a[i] + b[i];
-		rst[i] = temp % 2;
-		temp /= 2;
-	}
-}
-
-void add_4x32bits(byte* rst, byte* a, byte* b, byte* c, byte* d)
-{
-	byte temp1[32], temp2[32];
-
-	add_2x32bits(temp1, a, b);
-	add_2x32bits(temp2, c, d);
-	add_2x32bits(rst, temp1, temp2);
-}
-
-void ff_func(byte* a_32bits, byte* b_32bits, byte* c_32bits, byte* d_32bits, byte* m_32bits, int s, unsigned long t)
-{
-	byte temp[32], t_32bits[32], temp_add4[32];
-
-	f_func(temp, b_32bits, c_32bits, d_32bits, 32);
-	long2bin(t_32bits, t);
-	add_4x32bits(temp_add4, a_32bits, temp, m_32bits, t_32bits);
-	cyclic_shift_left(temp_add4, s, 32);
-	add_2x32bits(a_32bits, temp_add4, b_32bits);
-}
-
-void gg_func(byte* a_32bits, byte* b_32bits, byte* c_32bits, byte* d_32bits, byte* m_32bits, int s, unsigned long t)
-{
-	byte temp[32], t_32bits[32], temp_add4[32];
-
-	g_func(temp, b_32bits, c_32bits, d_32bits, 32);
-	long2bin(t_32bits, t);
-	add_4x32bits(temp_add4, a_32bits, temp, m_32bits, t_32bits);
-	cyclic_shift_left(temp_add4, s, 32);
-	add_2x32bits(a_32bits, temp_add4, b_32bits);
-}
-
-void hh_func(byte* a_32bits, byte* b_32bits, byte* c_32bits, byte* d_32bits, byte* m_32bits, int s, unsigned long t)
-{
-	byte temp[32], t_32bits[32], temp_add4[32];
-
-	h_func(temp, b_32bits, c_32bits, d_32bits, 32);
-	long2bin(t_32bits, t);
-	add_4x32bits(temp_add4, a_32bits, temp, m_32bits, t_32bits);
-	cyclic_shift_left(temp_add4, s, 32);
-	add_2x32bits(a_32bits, temp_add4, b_32bits);
-}
-
-void ii_func(byte* a_32bits, byte* b_32bits, byte* c_32bits, byte* d_32bits, byte* m_32bits, int s, unsigned long t)
-{
-	byte temp[32], t_32bits[32], temp_add4[32];
-
-	i_func(temp, b_32bits, c_32bits, d_32bits, 32);
-	long2bin(t_32bits, t);
-	add_4x32bits(temp_add4, a_32bits, temp, m_32bits, t_32bits);
-	cyclic_shift_left(temp_add4, s, 32);
-	add_2x32bits(a_32bits, temp_add4, b_32bits);
-}
-
-void getMD5(unsigned long md5[4], byte data[16][32])
-{
-	byte a_32bits[32], b_32bits[32], c_32bits[32], d_32bits[32];
-	byte A_32bits[32], B_32bits[32], C_32bits[32], D_32bits[32];
-	unsigned long temp;
+	uint32 a = state[0];
+	uint32 b = state[1];
+	uint32 c = state[2];
+	uint32 d = state[3];
+	uint32 x[16];
 	
+	decode(block, x, 64);
 
-	long2bin(a_32bits, unsigned long(A));
-	long2bin(b_32bits, unsigned long(B));
-	long2bin(c_32bits, unsigned long(C));
-	long2bin(d_32bits, unsigned long(D));
+	/* Round 1 */
+	a = FF(a, b, c, d, x[0], s11, 0xd76aa478);
+	d = FF(d, a, b, c, x[1], s12, 0xe8c7b756);
+	c = FF(c, d, a, b, x[2], s13, 0x242070db);
+	b = FF(b, c, d, a, x[3], s14, 0xc1bdceee);
+	a = FF(a, b, c, d, x[4], s11, 0xf57c0faf);
+	d = FF(d, a, b, c, x[5], s12, 0x4787c62a);
+	c = FF(c, d, a, b, x[6], s13, 0xa8304613);
+	b = FF(b, c, d, a, x[7], s14, 0xfd469501);
+	a = FF(a, b, c, d, x[8], s11, 0x698098d8);
+	d = FF(d, a, b, c, x[9], s12, 0x8b44f7af);
+	c = FF(c, d, a, b, x[10], s13, 0xffff5bb1);
+	b = FF(b, c, d, a, x[11], s14, 0x895cd7be);
+	a = FF(a, b, c, d, x[12], s11, 0x6b901122);
+	d = FF(d, a, b, c, x[13], s12, 0xfd987193);
+	c = FF(c, d, a, b, x[14], s13, 0xa679438e);
+	b = FF(b, c, d, a, x[15], s14, 0x49b40821);
 
-	ff_func(a_32bits, b_32bits, c_32bits, d_32bits, data[0], 7, unsigned long(0xd76aa478));
-	ff_func(d_32bits, a_32bits, b_32bits, c_32bits, data[1], 12, unsigned long(0xe8c7b756));
-	ff_func(c_32bits, d_32bits, a_32bits, b_32bits, data[2], 17, unsigned long(0x242070db));
-	ff_func(b_32bits, c_32bits, d_32bits, a_32bits, data[3], 22, unsigned long(0xc1bdceee));
-	ff_func(a_32bits, b_32bits, c_32bits, d_32bits, data[4], 7, unsigned long(0xf57c0faf));
-	ff_func(d_32bits, a_32bits, b_32bits, c_32bits, data[5], 12, unsigned long(0x4787c62a));
-	ff_func(c_32bits, d_32bits, a_32bits, b_32bits, data[6], 17, unsigned long(0xa8304613));
-	ff_func(b_32bits, c_32bits, d_32bits, a_32bits, data[7], 22, unsigned long(0xfd469501));
-	ff_func(a_32bits, b_32bits, c_32bits, d_32bits, data[8], 7, unsigned long(0x698098d8));
-	ff_func(d_32bits, a_32bits, b_32bits, c_32bits, data[9], 12, unsigned long(0x8b44f7af));
-	ff_func(c_32bits, d_32bits, a_32bits, b_32bits, data[10], 17, unsigned long(0xffff5bb1));
-	ff_func(b_32bits, c_32bits, d_32bits, a_32bits, data[11], 22, unsigned long(0x895cd7be));
-	ff_func(a_32bits, b_32bits, c_32bits, d_32bits, data[12], 7, unsigned long(0x6b901122));
-	ff_func(d_32bits, a_32bits, b_32bits, c_32bits, data[13], 12, unsigned long(0xfd987193));
-	ff_func(c_32bits, d_32bits, a_32bits, b_32bits, data[14], 17, unsigned long(0xa679438e));
-	ff_func(b_32bits, c_32bits, d_32bits, a_32bits, data[15], 22, unsigned long(0x49b40821));
-													
-	gg_func(a_32bits, b_32bits, c_32bits, d_32bits, data[1], 5, unsigned long(0xf61e2562));
-	gg_func(d_32bits, a_32bits, b_32bits, c_32bits, data[6], 9, unsigned long(0xc040b340));
-	gg_func(c_32bits, d_32bits, a_32bits, b_32bits, data[11], 14, unsigned long(0x265e5a51));
-	gg_func(b_32bits, c_32bits, d_32bits, a_32bits, data[0], 20, unsigned long(0xe9b6c7aa));
-	gg_func(a_32bits, b_32bits, c_32bits, d_32bits, data[5], 5, unsigned long(0xd62f105d));
-	gg_func(d_32bits, a_32bits, b_32bits, c_32bits, data[10], 9, unsigned long(0x02441453));
-	gg_func(c_32bits, d_32bits, a_32bits, b_32bits, data[15], 14, unsigned long(0xd8a1e681));
-	gg_func(b_32bits, c_32bits, d_32bits, a_32bits, data[4], 20, unsigned long(0xe7d3fbc8));
-	gg_func(a_32bits, b_32bits, c_32bits, d_32bits, data[9], 5, unsigned long(0x21e1cde6));
-	gg_func(d_32bits, a_32bits, b_32bits, c_32bits, data[14], 9, unsigned long(0xc33707d6));
-	gg_func(c_32bits, d_32bits, a_32bits, b_32bits, data[3], 14, unsigned long(0xf4d50d87));
-	gg_func(b_32bits, c_32bits, d_32bits, a_32bits, data[8], 20, unsigned long(0x455a14ed));
-	gg_func(a_32bits, b_32bits, c_32bits, d_32bits, data[13], 5, unsigned long(0xa9e3e905));
-	gg_func(d_32bits, a_32bits, b_32bits, c_32bits, data[2], 9, unsigned long(0xfcefa3f8));
-	gg_func(c_32bits, d_32bits, a_32bits, b_32bits, data[7], 14, unsigned long(0x676f02d9));
-	gg_func(b_32bits, c_32bits, d_32bits, a_32bits, data[12], 20, unsigned long(0x8d2a4c8a));
-													
-	hh_func(a_32bits, b_32bits, c_32bits, d_32bits, data[5], 4, unsigned long(0xfffa3942));
-	hh_func(d_32bits, a_32bits, b_32bits, c_32bits, data[8], 11, unsigned long(0x8771f681));
-	hh_func(c_32bits, d_32bits, a_32bits, b_32bits, data[11], 16, unsigned long(0x6d9d6122));
-	hh_func(b_32bits, c_32bits, d_32bits, a_32bits, data[14], 23, unsigned long(0xfde5380c));
-	hh_func(a_32bits, b_32bits, c_32bits, d_32bits, data[1], 4, unsigned long(0xa4beea44));
-	hh_func(d_32bits, a_32bits, b_32bits, c_32bits, data[4], 11, unsigned long(0x4bdecfa9));
-	hh_func(c_32bits, d_32bits, a_32bits, b_32bits, data[7], 16, unsigned long(0xf6bb4b60));
-	hh_func(b_32bits, c_32bits, d_32bits, a_32bits, data[10], 23, unsigned long(0xbebfbc70));
-	hh_func(a_32bits, b_32bits, c_32bits, d_32bits, data[13], 4, unsigned long(0x289b7ec6));
-	hh_func(d_32bits, a_32bits, b_32bits, c_32bits, data[0], 11, unsigned long(0xeaa127fa));
-	hh_func(c_32bits, d_32bits, a_32bits, b_32bits, data[3], 16, unsigned long(0xd4ef3085));
-	hh_func(b_32bits, c_32bits, d_32bits, a_32bits, data[6], 23, unsigned long(0x04881d05));
-	hh_func(a_32bits, b_32bits, c_32bits, d_32bits, data[9], 4, unsigned long(0xd9d4d039));
-	hh_func(d_32bits, a_32bits, b_32bits, c_32bits, data[12], 11, unsigned long(0xe6db99e5));
-	hh_func(c_32bits, d_32bits, a_32bits, b_32bits, data[15], 16, unsigned long(0x1fa27cf8));
-	hh_func(b_32bits, c_32bits, d_32bits, a_32bits, data[2], 23, unsigned long(0xc4ac5665));
-													
-	ii_func(a_32bits, b_32bits, c_32bits, d_32bits, data[0], 6, unsigned long(0xf4292244));
-	ii_func(d_32bits, a_32bits, b_32bits, c_32bits, data[7], 10, unsigned long(0x432aff97));
-	ii_func(c_32bits, d_32bits, a_32bits, b_32bits, data[14], 15, unsigned long(0xab9423a7));
-	ii_func(b_32bits, c_32bits, d_32bits, a_32bits, data[5], 21, unsigned long(0xfc93a039));
-	ii_func(a_32bits, b_32bits, c_32bits, d_32bits, data[12], 6, unsigned long(0x655b59c3));
-	ii_func(d_32bits, a_32bits, b_32bits, c_32bits, data[3], 10, unsigned long(0x8f0ccc92));
-	ii_func(c_32bits, d_32bits, a_32bits, b_32bits, data[10], 15, unsigned long(0xffeff47d));
-	ii_func(b_32bits, c_32bits, d_32bits, a_32bits, data[1], 21, unsigned long(0x85845dd1));
-	ii_func(a_32bits, b_32bits, c_32bits, d_32bits, data[8], 6, unsigned long(0x6fa87e4f));
-	ii_func(d_32bits, a_32bits, b_32bits, c_32bits, data[15], 10, unsigned long(0xfe2ce6e0));
-	ii_func(c_32bits, d_32bits, a_32bits, b_32bits, data[6], 15, unsigned long(0xa3014314));
-	ii_func(b_32bits, c_32bits, d_32bits, a_32bits, data[13], 21, unsigned long(0x4e0811a1));
-	ii_func(a_32bits, b_32bits, c_32bits, d_32bits, data[4], 6, unsigned long(0xf7537e82));
-	ii_func(d_32bits, a_32bits, b_32bits, c_32bits, data[11], 10, unsigned long(0xbd3af235));
-	ii_func(c_32bits, d_32bits, a_32bits, b_32bits, data[2], 15, unsigned long(0x2ad7d2bb));
-	ii_func(b_32bits, c_32bits, d_32bits, a_32bits, data[9], 21, unsigned long(0xeb86d391));
+	/* Round 2 */
+	a = GG(a, b, c, d, x[1], s21, 0xf61e2562);
+	d = GG(d, a, b, c, x[6], s22, 0xc040b340);
+	c = GG(c, d, a, b, x[11], s23, 0x265e5a51);
+	b = GG(b, c, d, a, x[0], s24, 0xe9b6c7aa);
+	a = GG(a, b, c, d, x[5], s21, 0xd62f105d);
+	d = GG(d, a, b, c, x[10], s22, 0x2441453);
+	c = GG(c, d, a, b, x[15], s23, 0xd8a1e681);
+	b = GG(b, c, d, a, x[4], s24, 0xe7d3fbc8);
+	a = GG(a, b, c, d, x[9], s21, 0x21e1cde6);
+	d = GG(d, a, b, c, x[14], s22, 0xc33707d6);
+	c = GG(c, d, a, b, x[3], s23, 0xf4d50d87);
+	b = GG(b, c, d, a, x[8], s24, 0x455a14ed);
+	a = GG(a, b, c, d, x[13], s21, 0xa9e3e905);
+	d = GG(d, a, b, c, x[2], s22, 0xfcefa3f8);
+	c = GG(c, d, a, b, x[7], s23, 0x676f02d9);
+	b = GG(b, c, d, a, x[12], s24, 0x8d2a4c8a);
 
-	long2bin(A_32bits, unsigned long(A));
-	long2bin(B_32bits, unsigned long(B));
-	long2bin(C_32bits, unsigned long(C));
-	long2bin(D_32bits, unsigned long(D));
-	add_2x32bits(a_32bits, a_32bits, A_32bits);
-	add_2x32bits(b_32bits, b_32bits, B_32bits);
-	add_2x32bits(c_32bits, c_32bits, C_32bits);
-	add_2x32bits(d_32bits, d_32bits, D_32bits);
+	/* Round 3 */
+	a = HH(a, b, c, d, x[5], s31, 0xfffa3942);
+	d = HH(d, a, b, c, x[8], s32, 0x8771f681);
+	c = HH(c, d, a, b, x[11], s33, 0x6d9d6122);
+	b = HH(b, c, d, a, x[14], s34, 0xfde5380c);
+	a = HH(a, b, c, d, x[1], s31, 0xa4beea44);
+	d = HH(d, a, b, c, x[4], s32, 0x4bdecfa9);
+	c = HH(c, d, a, b, x[7], s33, 0xf6bb4b60);
+	b = HH(b, c, d, a, x[10], s34, 0xbebfbc70);
+	a = HH(a, b, c, d, x[13], s31, 0x289b7ec6);
+	d = HH(d, a, b, c, x[0], s32, 0xeaa127fa);
+	c = HH(c, d, a, b, x[3], s33, 0xd4ef3085);
+	b = HH(b, c, d, a, x[6], s34, 0x4881d05);
+	a = HH(a, b, c, d, x[9], s31, 0xd9d4d039);
+	d = HH(d, a, b, c, x[12], s32, 0xe6db99e5);
+	c = HH(c, d, a, b, x[15], s33, 0x1fa27cf8);
+	b = HH(b, c, d, a, x[2], s34, 0xc4ac5665);
 
-	temp = 0;
-	for (int i = 0; i < 32; i++) temp |= (unsigned long(a_32bits[i]) << i);
-	md5[0] = temp;
-	temp = 0;
-	for (int i = 0; i < 32; i++) temp |= (unsigned long(b_32bits[i]) << i);
-	md5[1] = temp;
-	temp = 0;
-	for (int i = 0; i < 32; i++) temp |= (unsigned long(c_32bits[i]) << i);
-	md5[2] = temp;
-	temp = 0;
-	for (int i = 0; i < 32; i++) temp |= (unsigned long(d_32bits[i]) << i);
-	md5[3] = temp;
+	/* Round 4 */
+	a = II(a, b, c, d, x[0], s41, 0xf4292244);
+	d = II(d, a, b, c, x[7], s42, 0x432aff97);
+	c = II(c, d, a, b, x[14], s43, 0xab9423a7);
+	b = II(b, c, d, a, x[5], s44, 0xfc93a039);
+	a = II(a, b, c, d, x[12], s41, 0x655b59c3);
+	d = II(d, a, b, c, x[3], s42, 0x8f0ccc92);
+	c = II(c, d, a, b, x[10], s43, 0xffeff47d);
+	b = II(b, c, d, a, x[1], s44, 0x85845dd1);
+	a = II(a, b, c, d, x[8], s41, 0x6fa87e4f);
+	d = II(d, a, b, c, x[15], s42, 0xfe2ce6e0);
+	c = II(c, d, a, b, x[6], s43, 0xa3014314);
+	b = II(b, c, d, a, x[13], s44, 0x4e0811a1);
+	a = II(a, b, c, d, x[4], s41, 0xf7537e82);
+	d = II(d, a, b, c, x[11], s42, 0xbd3af235);
+	c = II(c, d, a, b, x[2], s43, 0x2ad7d2bb);
+	b = II(b, c, d, a, x[9], s44, 0xeb86d391);
+
+	state[0] += a;
+	state[1] += b;
+	state[2] += c;
+	state[3] += d;
+}
+
+void update(uint8* buffer, uint32* state, uint32* count,const uint8* input, uint32 len)
+{
+	uint32 i, index, partLen;
+
+	index = (uint32)((count[0] >> 3) & 0x3f);
+	if ((count[0] += (len << 3)) < (len << 3)) {
+		++count[1];
+	}
+	count[1] += (len >> 29);
+
+	partLen = 64 - index;
+
+	if (len >= partLen) {
+
+		memcpy(&buffer[index], input, partLen);
+		transform(buffer, state);
+
+		for (i = partLen; i + 63 < len; i += 64)
+		{
+			transform(&input[i], state);
+		}
+		index = 0;
+
+	}
+	else {
+		i = 0;
+	}
+
+	/* Buffer remaining input */
+	memcpy(&buffer[index], &input[i], len - i);
+}
+
+string getMD5(string message)
+{
+	uint8 bits[8];
+	uint32 oldState[4], state[4];
+	uint32 oldCount[2], count[2];
+	uint32 index, padLen;
+	uint8 buffer[64], digest[16];
+
+	count[0] = 0;
+	count[1] = 0;
+	state[0] = A;
+	state[1] = B;
+	state[2] = C;
+	state[3] = D;
+
+	update(buffer, state, count, (const uint8*)message.c_str(), uint32(message.length()));
+
+	memcpy(oldState, state, 16);
+	memcpy(oldCount, count, 8);
+	encode(count, bits, 8);
+	index = (uint32)((count[0] >> 3) & 0x3f);
+	padLen = (index < 56) ? (56 - index) : (120 - index);
+	update(buffer, state, count, PADDING, padLen);
+	update(buffer, state, count, bits, 8);
+	encode(state, digest, 16);
+	memcpy(state, oldState, 16);
+	memcpy(count, oldCount, 8);
+
+	string str;
+	str.reserve(16 << 1);
+	for (uint32 i = 0; i < 16; ++i) {
+		int t = digest[i];
+		int a = t / 16;
+		int b = t % 16;
+		str.append(1, HEX_NUMBERS[a]);
+		str.append(1, HEX_NUMBERS[b]);
+	}
+	return str;
 }
