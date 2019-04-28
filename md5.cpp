@@ -71,7 +71,8 @@ void decode(const uint8* input, uint32* output, uint32 length)
 
 void encode(const uint32* input, uint8* output, uint32 length)
 {
-	for (uint32 i = 0, j = 0; j < length; ++i, j += 4) {
+	for (uint32 i = 0, j = 0; j < length; ++i, j += 4)
+	{
 		output[j] = (uint8)(input[i] & 0xff);
 		output[j + 1] = (uint8)((input[i] >> 8) & 0xff);
 		output[j + 2] = (uint8)((input[i] >> 16) & 0xff);
@@ -89,7 +90,7 @@ void transform(const uint8* block, uint32* state)
 	
 	decode(block, x, 64);
 
-	/* Round 1 */
+	// Round 1
 	a = FF(a, b, c, d, x[0], s11, 0xd76aa478);
 	d = FF(d, a, b, c, x[1], s12, 0xe8c7b756);
 	c = FF(c, d, a, b, x[2], s13, 0x242070db);
@@ -107,7 +108,7 @@ void transform(const uint8* block, uint32* state)
 	c = FF(c, d, a, b, x[14], s13, 0xa679438e);
 	b = FF(b, c, d, a, x[15], s14, 0x49b40821);
 
-	/* Round 2 */
+	// Round 2
 	a = GG(a, b, c, d, x[1], s21, 0xf61e2562);
 	d = GG(d, a, b, c, x[6], s22, 0xc040b340);
 	c = GG(c, d, a, b, x[11], s23, 0x265e5a51);
@@ -125,7 +126,7 @@ void transform(const uint8* block, uint32* state)
 	c = GG(c, d, a, b, x[7], s23, 0x676f02d9);
 	b = GG(b, c, d, a, x[12], s24, 0x8d2a4c8a);
 
-	/* Round 3 */
+	// Round 3
 	a = HH(a, b, c, d, x[5], s31, 0xfffa3942);
 	d = HH(d, a, b, c, x[8], s32, 0x8771f681);
 	c = HH(c, d, a, b, x[11], s33, 0x6d9d6122);
@@ -143,7 +144,7 @@ void transform(const uint8* block, uint32* state)
 	c = HH(c, d, a, b, x[15], s33, 0x1fa27cf8);
 	b = HH(b, c, d, a, x[2], s34, 0xc4ac5665);
 
-	/* Round 4 */
+	// Round 4
 	a = II(a, b, c, d, x[0], s41, 0xf4292244);
 	d = II(d, a, b, c, x[7], s42, 0x432aff97);
 	c = II(c, d, a, b, x[14], s43, 0xab9423a7);
@@ -167,31 +168,33 @@ void transform(const uint8* block, uint32* state)
 	state[3] += d;
 }
 
-void update(uint8* buffer, uint32* state, uint32* count,const uint8* input, uint32 len)
+void update(uint8* buffer, uint32* state, uint32* count, const uint8* input, uint32 len)
 {
-	uint32 i, index, partLen;
+	uint32 i, index, length;
 
 	index = (uint32)((count[0] >> 3) & 0x3f);
-	if ((count[0] += (len << 3)) < (len << 3)) {
+	if ((count[0] += (len << 3)) < (len << 3)) 
+	{
 		++count[1];
 	}
 	count[1] += (len >> 29);
 
-	partLen = 64 - index;
+	length = 64 - index;
 
-	if (len >= partLen) {
+	if (len >= length)
+	{
 
-		memcpy(&buffer[index], input, partLen);
+		memcpy(&buffer[index], input, length);
 		transform(buffer, state);
 
-		for (i = partLen; i + 63 < len; i += 64)
+		for (i = length; i + 63 < len; i += 64)
 		{
 			transform(&input[i], state);
 		}
 		index = 0;
-
 	}
-	else {
+	else
+	{
 		i = 0;
 	}
 
@@ -201,10 +204,10 @@ void update(uint8* buffer, uint32* state, uint32* count,const uint8* input, uint
 
 string getMD5(string message)
 {
-	uint8 bits[8];
-	uint32 oldState[4], state[4];
-	uint32 oldCount[2], count[2];
-	uint32 index, padLen;
+	uint8 bin[8];
+	uint32 state[4];
+	uint32 count[2];
+	uint32 index, length;
 	uint8 buffer[64], digest[16];
 
 	count[0] = 0;
@@ -216,25 +219,21 @@ string getMD5(string message)
 
 	update(buffer, state, count, (const uint8*)message.c_str(), uint32(message.length()));
 
-	memcpy(oldState, state, 16);
-	memcpy(oldCount, count, 8);
-	encode(count, bits, 8);
+	encode(count, bin, 8);
 	index = (uint32)((count[0] >> 3) & 0x3f);
-	padLen = (index < 56) ? (56 - index) : (120 - index);
-	update(buffer, state, count, PADDING, padLen);
-	update(buffer, state, count, bits, 8);
+	if (index < 56) length = 56 - index;
+	else index = 120 - index;
+	update(buffer, state, count, PADDING, length);
+	update(buffer, state, count, bin, 8);
 	encode(state, digest, 16);
-	memcpy(state, oldState, 16);
-	memcpy(count, oldCount, 8);
 
 	string str;
-	str.reserve(16 << 1);
 	for (uint32 i = 0; i < 16; ++i) {
 		int t = digest[i];
 		int a = t / 16;
 		int b = t % 16;
-		str.append(1, HEX_NUMBERS[a]);
-		str.append(1, HEX_NUMBERS[b]);
+		str.append(1, HEX[a]);
+		str.append(1, HEX[b]);
 	}
 	return str;
 }

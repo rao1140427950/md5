@@ -10,7 +10,7 @@ typedef unsigned char uint8;
 typedef unsigned long uint32;
 
 const uint8 PADDING[64] = { 0x80 };
-const char HEX_NUMBERS[16] = {
+const char HEX[16] = {
   '0', '1', '2', '3',
   '4', '5', '6', '7',
   '8', '9', 'a', 'b',
